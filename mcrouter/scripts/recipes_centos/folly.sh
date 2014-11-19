@@ -2,7 +2,11 @@
 
 source common.sh
 
-[ -d folly ] || git clone https://github.com/facebook/folly
+# instead of clonning folly going to download last good known
+# so commented clone path
+#[ -d folly ] || git clone https://github.com/facebook/folly
+wget https://github.com/denisspb/mcrouter/blob/master/mcrouter/scripts/folly_2014_11_18.tar.gz?raw=true -O folly.tar.gz
+tar xzvf folly.tar.gz
 
 mkdir -p double-conversion && cd double-conversion
 wget https://double-conversion.googlecode.com/files/double-conversion-2.0.1.tar.gz
