@@ -19,7 +19,7 @@ tar -zvxf m4-1.4.9.tar.gz
 cd m4-1.4.9
 ./configure
 make
-make install
+sudo make install
 cd ..
 
 
