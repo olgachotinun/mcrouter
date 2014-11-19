@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+#
+# Description: this script intalls all necessary components to build mcrouter under CentOS 6.5
+# it should be run only once to setup environment. And it takes assumption that all these shared 
+# components will be installed to default for RPM location or /usr/local
+#
+# this script takes one parameter: path to temporary folder where assets will be downloaded
+#
 
 [ -n "$1" ] || ( echo "Install tmp dir is missing"; exit 1 )
 
@@ -58,7 +65,7 @@ sudo ln -s /usr/local/lib/libboost_regex.so.1.55.0 /usr/local/lib/libboost_regex
 
 # update ld config
 sudo ldconfig
-# not sure that this line is correct but otherwise thrift1 will not be able libboost*.so
+# not sure that this line is correct but otherwise thrift1 will not be able to find libboost*.so in runtime
 echo /usr/local/lib | sudo tee --append /etc/ld.so.conf > /dev/null
 
 # ragel

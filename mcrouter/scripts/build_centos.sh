@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+#
+# Description: this script builds mcrouter (and as part of build folly and fbthrift)
+#
+# this script takes two parameters: 
+# 1: folder where mcrouter will be build (and some intermediate components)
+# 2: (optional) number of parallel processes to speedup build process (passed to make)
+#
+#
 
 set -ex
 
