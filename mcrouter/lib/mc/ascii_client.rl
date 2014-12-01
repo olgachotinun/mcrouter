@@ -31,7 +31,7 @@ machine ascii;
 action start_token {
   if (!skipping_key(parser)) {
     parser->partial_token = 1;
-    parser->te = parser->tbuf;
+    parser->te = ((parser->tbuf)? parser->tbuf->buf : NULL);
     ts = p;
   }
 }
@@ -39,7 +39,7 @@ action finish_token {
   if (parser->partial_token && !skipping_key(parser)) {
     FBI_ASSERT(ts);
     parser->partial_token = 0;
-    if (parser->te && parser->te > parser->tbuf) {
+    if (parser->te && parser->te > ((parser->tbuf)? parser->tbuf->buf : NULL)) {
       /* we have something stuffed in our cheeks,
          let's put them together and update ts. */
       FBI_ASSERT(ts <= p);
@@ -55,8 +55,8 @@ action finish_token {
         strncpy(parser->te, ts, n);
         parser->te += n;
         *parser->te = '\0';
-        tlen = parser->te - parser->tbuf;
-        ts = parser->tbuf;
+        tlen = parser->te - ((parser->tbuf)? parser->tbuf->buf : NULL);
+        ts = ((parser->tbuf)? parser->tbuf->buf : NULL);
       }
     } else {
       tlen = p - ts;

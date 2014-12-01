@@ -257,6 +257,7 @@ typedef struct mc_msg_s {
 
   void *context; ///< get/set key, stats arg, flushre regexp
   size_t _extra_size;
+  size_t _allocated_size;
 } mc_msg_t;
 
 /*

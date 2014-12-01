@@ -69,6 +69,24 @@ folly::IOBuf concatAll(InputIterator begin, InputIterator end) {
   return out;
 }
 
+// This works on facebook::memcache::McReply iterators. Olga
+template <typename InputIterator>
+folly::IOBuf concatAll2(InputIterator begin, InputIterator end) {
+    folly::IOBuf out;
+    if (begin == end) {
+        return out;
+    }
+
+    begin->value().cloneInto(out);
+    ++begin;
+    while (begin != end) {
+        out.prependChain(std::move(begin->value().clone()));
+        ++begin;
+    }
+
+    return out;
+}
+
 /**
  * Given a coalesced IOBuf and a range of bytes [begin, begin + size) inside it,
  * clones into out IOBuf so that cloned.data() == begin and

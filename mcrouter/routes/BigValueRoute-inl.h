@@ -232,14 +232,16 @@ Reply BigValueRoute<RouteHandleIf>::mergeChunkGetReplies(
   if (!reduced_reply_it->isHit()) {
       return Reply(reduced_reply_it->result());
   }
-
+/*
   std::vector<std::unique_ptr<folly::IOBuf>> data_vec;
   while (begin != end) {
     data_vec.push_back(begin->value().clone());
     ++begin;
   }
+  */
 
-  initial_reply.setValue(concatAll(data_vec.begin(), data_vec.end()));
+  //initial_reply.setValue(concatAll(data_vec.begin(), data_vec.end()));
+  initial_reply.setValue(concatAll2(begin, end));
   initial_reply.setResult(reduced_reply_it->result());
   return std::move(initial_reply);
 }

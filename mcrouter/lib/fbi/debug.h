@@ -92,6 +92,8 @@ void dbg_exit();
  * performance and compile debug calls out by setting DEBUG_MAX_LEVEL to
  * FBI_LOG_DEFAULT. */
 
+// OLga: temp changes
+#define FBCODE_OPT_BUILD 1
 #if !defined(DEBUG_MAX_LEVEL)
 #ifdef FBCODE_OPT_BUILD
 #define DEBUG_MAX_LEVEL FBI_LOG_DEFAULT

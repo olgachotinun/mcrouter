@@ -71,6 +71,10 @@ static inline const char* parser_error_to_string(const parser_error_t error) {
                  parser_unspecified_error];
 }
 
+typedef  struct {
+    size_t size;
+    char *buf;
+} tbuf_type;
 
 /*
  * ascii parser state
@@ -86,8 +90,7 @@ typedef struct parser_s {
   mc_msg_t *msg;
 
   int partial_token; /// < 1 indicate the parser is in the middle of a token
-  size_t tbuf_len; ///< token buffer length
-  char *tbuf; ///< token buffer
+  tbuf_type *tbuf; ///< token buffer +
   char* te; ///< token end
 
   /**

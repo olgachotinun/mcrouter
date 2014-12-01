@@ -10,9 +10,12 @@
 
 #include <ctype.h>
 #include <stdint.h>
+#include <pthread.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <string.h>
 #include <zlib.h>
+#include <sys/syscall.h>  // Olga: to get thread id, temp
 
 #include "mcrouter/lib/fbi/nstring.h"
 #include "mcrouter/lib/mc/protocol.h"
@@ -76,14 +79,109 @@ void mc_msg_init_not_refcounted(mc_msg_t* msg) {
   msg->_refcount = MSG_NOT_REFCOUNTED;
 }
 
+pthread_mutex_t buffer_lock; // Olverkill. Now it's all done on 1 thread. Olga
+// uncontended mutex lock is unlocked in user space. Olga
+#define QUEUESIZE 1000
+#define PREALLOCATED_SIZE 1024
+
+typedef struct {
+    mc_msg_t* q[QUEUESIZE+1];  /* body of queue */
+    int first;              /* position of first element */
+    int last;               /* position of last element */
+    int count;              /* number of queue elements */
+    int numCreatedBuffers;  /* total num new buffers created */
+} queue_type;
+
+queue_type *buffer_queue = NULL;
+
+void msg_release_buffer(mc_msg_t *buf)
+{
+    pthread_mutex_lock(&buffer_lock);
+    if (buffer_queue->count >= QUEUESIZE)
+        // Can't happen, since we don't allow creation of > QUEUESIZE
+        printf("****Warning: queue overflow enqueue\n");
+    else {
+        //printf("*********** %ld: Returning buffer size = %i, ql: %i\n", (long) syscall(SYS_gettid), buf->_allocated_size, buffer_queue->count);
+        buffer_queue->last = (buffer_queue->last+1) % QUEUESIZE;
+        buffer_queue->q[ buffer_queue->last ] = buf;
+        buffer_queue->count = buffer_queue->count + 1;
+    }
+    pthread_mutex_unlock(&buffer_lock);
+}
+
+mc_msg_t *msg_acquire_buffer(size_t extra_size)
+{
+    mc_msg_t *buf = NULL;
+
+    // initialize object queue if first time
+    if (!buffer_queue) {
+        buffer_queue = (queue_type *) malloc(sizeof(queue_type));
+        buffer_queue->last = QUEUESIZE - 1;
+        buffer_queue->count = 0;
+        buffer_queue->numCreatedBuffers = 0;
+    }
+
+    // access the queue
+    pthread_mutex_lock(&buffer_lock);
+    if (buffer_queue->count <= 0) {
+        // Done with queue
+        pthread_mutex_unlock(&buffer_lock);
+        if (buffer_queue->numCreatedBuffers >= QUEUESIZE) {
+           //printf("*********** Max number of buffers created: %i\n", QUEUESIZE);
+           pthread_mutex_unlock(&buffer_lock);
+           return NULL;
+        }
+        // Don't enqueue, recursive lock, this buffer will be returned to queue when dereferenced.
+        size_t nalloc = (extra_size > PREALLOCATED_SIZE)? extra_size : PREALLOCATED_SIZE;
+        //("*********** %ld: Allocating new buffer size = %i, ql: %i\n", (long) syscall(SYS_gettid), nalloc, buffer_queue->count);
+        buf = malloc(sizeof(mc_msg_t) + nalloc);
+        memset(buf, 0, sizeof(*buf));
+        buf->_allocated_size = nalloc;
+        buffer_queue->numCreatedBuffers++;
+        return buf;
+    } else {
+        buf = buffer_queue->q[ buffer_queue->first ];
+        //printf("*********** Re-using buffer size = %i, need %i, ql: %i\n", buf->_allocated_size, extra_size, buffer_queue->count);
+        buffer_queue->first = (buffer_queue->first+1) % QUEUESIZE;
+        buffer_queue->count = buffer_queue->count - 1;
+        // Done with queue
+        pthread_mutex_unlock(&buffer_lock);
+
+        // see if the buffer size needs to be increased.
+        if (extra_size > buf->_allocated_size) {
+            //printf("*********** %ld: Reallocating new buffer size = %i, need %i, ql: %i\n", (long) syscall(SYS_gettid), buf->_allocated_size, extra_size, buffer_queue->count);
+            buf = realloc(buf, sizeof(mc_msg_t) + extra_size);
+            memset(buf, 0, sizeof(*buf));
+            buf->_allocated_size = extra_size;
+        }
+    }
+
+    return buf;
+}
+
+void msg_delete_buffers()
+{
+    pthread_mutex_lock(&buffer_lock);
+    while (buffer_queue->count <= 0) {
+        mc_msg_t* buf = buffer_queue->q[ buffer_queue->first ];
+        buffer_queue->first = (buffer_queue->first+1) % QUEUESIZE;
+        buffer_queue->count = buffer_queue->count - 1;
+        free(buf);
+    }
+    pthread_mutex_unlock(&buffer_lock);
+}
+
 mc_msg_t* mc_msg_new(size_t extra_size) {
-  mc_msg_t* msg = malloc(sizeof(mc_msg_t) + extra_size);
+  // mc_msg_t* msg = malloc(sizeof(mc_msg_t) + extra_size);
+  mc_msg_t* msg = msg_acquire_buffer(extra_size);
   if (msg == NULL) {
-    return NULL;
+     printf("***********CANT GET MSG!!!\n");
+     return NULL;
   }
 
-  memset(msg, 0, sizeof(*msg));
   mc_msg_incref(msg);
+  // We are wasting potentially larger block of memory. OK for now...
+  // Olga, not sure what happens if we return more than requested..., might introduce new msg field
   msg->_extra_size = extra_size;
 
   if (_mc_msg_track_num_outstanding) {
@@ -290,7 +388,10 @@ mc_msg_t* mc_msg_realloc(mc_msg_t *msg, size_t new_extra_size) {
     return mc_msg_new(new_extra_size);
   }
 
-  if (new_extra_size <= msg->_extra_size) {
+  if (new_extra_size <= msg->_allocated_size) {
+    if (msg->_extra_size < new_extra_size) {
+       msg->_extra_size = new_extra_size;
+    }
     return msg;
   }
 
@@ -300,6 +401,7 @@ mc_msg_t* mc_msg_realloc(mc_msg_t *msg, size_t new_extra_size) {
     return NULL;
   }
 
+  // Olga: possibly avoid copying, pass a flag to mc_msg_new
   _msgcpy(msg_copy, msg);
   msg_copy->_extra_size = new_extra_size;
 
@@ -385,9 +487,10 @@ void mc_msg_decref(mc_msg_t* msg) {
       mc_fbtrace_info_decref(msg->fbtrace_info);
 #endif
 #ifndef FBCODE_OPT_BUILD
-      memset(msg, 'P', sizeof(*msg));
+// Olga      memset(msg, 'P', sizeof(*msg));
 #endif
-      free(msg);
+      // Olga free(msg);
+      msg_release_buffer(msg);
     }
   }
 }
